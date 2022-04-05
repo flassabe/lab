@@ -10,20 +10,51 @@ You can test your routes with the **curl** command to forge HTTP requests.
 
 ## Routes to implement
 
-Several routes shall be implemented to provide all required positioning server capabilities:
+There are four main features to implement to the server, each one corresponding to a route:
 
-- Display the page for RSSI data file selection
-- Loading RSSI data from a file
-- Handling positioning requests by a mobile device (curl values from the test-data file).
+- Handling RSSI sample packet from the probes
+- Handling calibration start requests by a mobile device
+- Handling calibration stop requests by a mobile device
+- Handling positioning requests by a mobile device
 
-## Selecting the RSSI file
+To use the ORM mapping classes, fingerprint_value and calibrating_mobile, you must open the rssi.db file sqlite3 rssi.db and run the following SQL statements:
 
-This route loads a page with a file selection and a *Submit* button. Upon file choice and submission, the file is uploaded to the server and the route
-responsible for data loading is called.
+```sql
+CREATE TABLE fingerprint_value(id integer primary key, loc_id integer not null, ap_id integer not null, foreign key(ap_id) references accesspoint(id), foreign key(loc_id) references location(id));
+CREATE TABLE calibrating_mobile(mac_address text primary key, loc_id integer not null, foreign key(loc_id) references location(id));
+```
 
-## Loading RSSI data
+## Handling RSSI from probes
 
-From the file uploaded as part of a multipart request, the content is imported into a memory data structure (see TD1)
+This task is handled by route `/rssi`, where a probe request will be processed as follows: it is composed of a parameter ap whose value is the sending probe MAC address, and of a series of pairs XX:XX:XX:XX:XX:XX=-YY.YYYY where:
+
+- the X's are the measured devices MAC addresses hexadecimal characters
+- and the Y's are the avg RSSI value digits for the corresponding MAC address over the last second
+
+You have to put these information in the sqlite3 database named **rssi.db** whose schema can be displayed from the sqlite3 prompt through the command .schema.
+
+## Calibration start requests
+
+This feature is routed to the path `/start_calibration`. A device must send its MAC address and its coordinates (x, y, z) to the server. Upon receiving these parameters, the positioning server moves samples from the sample table if they are less than 1 second old and their source address equals those of the device query. It also puts the location and the mobile device MAC address into table calibrating_mobile.
+
+Then, the `/rssi` route also puts into fingerprint_value table all RSSI received for devices in calibrating_mobile table along with the AP MAC address who issued the RSSI and the corresponding location from the calibrating_mobile table.
+
+You can test the calibration start request by using curl from a linux laptop or from a smartphone (then, use a browser instead of curl) with the following command:
+
+`curl http://server_host:server_port/start_calibration?mac_addr=my_mac&x=my_x&y=my_y&z=my_z`
+
+where:
+
+- my_mac is your mobile device Wi-Fi interface card MAC address (see ifconfig or ip addr commands)
+- my_x, my_y and my_z are the coordinates of your location when running the curl command.
+
+## Calibration stop requests
+
+This feature is routed to the path `/stop_calibration`. The server removes any entry whose mac_address matches the parameter mac_address from table calibrating_mobile.
+
+You can test this feature with curl:
+
+`curl http://server_host:server_port/stop_calibration?mac_addr=my_mac`
 
 ## Handling positioning requests
 
@@ -34,6 +65,6 @@ The following ones are pairs of MAC addresses and RSSI values defining a RSSI sa
 
 Again, test this feature with curl (use proper values):
 
-curl http://server_host:server_port/locate?mac_addr=my_mac&mac1=aa:bb:cc:dd:ee:ff&rssi1=-45.2156&...&macN=aa:bb:cc:dd:ee:ff&rssiN=-54.5489
+`curl http://server_host:server_port/locate?mac_addr=my_mac&mac1=aa:bb:cc:dd:ee:ff&rssi1=-45.2156&...&macN=aa:bb:cc:dd:ee:ff&rssiN=-54.5489`
 
 It returns a location encoded in JSON.
